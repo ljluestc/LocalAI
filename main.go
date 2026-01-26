@@ -24,14 +24,6 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
-	// Catch signals from the OS requesting us to exit
-	go func() {
-		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		os.Exit(1)
-	}()
-
 	// handle loading environment variabled from .env files
 	envFiles := []string{".env", "localai.env"}
 	homeDir, err := os.UserHomeDir()
@@ -80,6 +72,26 @@ Version: ${version}
 			"version":   internal.PrintableVersion(),
 		},
 	)
+
+	// Catch signals from the OS requesting us to exit
+	go func() {
+		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
+		var signals []os.Signal
+		if len(cli.CLI.ExitSignals) > 0 {
+			for _, s := range cli.CLI.ExitSignals {
+				if sig := internal.ParseSignal(s); sig != nil {
+					signals = append(signals, sig)
+				}
+			}
+		}
+
+		if len(signals) == 0 {
+			signals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+		}
+		signal.Notify(c, signals...)
+		<-c
+		os.Exit(1)
+	}()
 
 	// Configure the logging level before we run the application
 	// This is here to preserve the existing --debug flag functionality
