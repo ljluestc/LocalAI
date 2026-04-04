@@ -402,6 +402,67 @@ var _ = Describe("Gallery Backends", func() {
 				})
 			})
 
+			Context("ZLUDA (experimental) backends", func() {
+				When("running on non-darwin", func() {
+					BeforeEach(func() {
+						if runtime.GOOS == "darwin" {
+							Skip("Skipping ZLUDA tests on darwin system")
+						}
+					})
+
+					It("CUDA backends should be compatible with ZLUDA capability", func() {
+						cudaBackend := &GalleryBackend{
+							Metadata: Metadata{
+								Name: "cuda12-llama-cpp",
+							},
+							URI: "quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-llama-cpp",
+						}
+						// ZLUDA translates CUDA calls, so CUDA backends should work
+						zludaState := &system.SystemState{GPUVendor: system.AMD, VRAM: 8 * 1024 * 1024 * 1024}
+						os.Setenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY", "zluda")
+						defer os.Unsetenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY")
+						Expect(cudaBackend.IsCompatibleWith(zludaState)).To(BeTrue())
+					})
+
+					It("CUDA backends should NOT be compatible with plain AMD capability", func() {
+						cudaBackend := &GalleryBackend{
+							Metadata: Metadata{
+								Name: "cuda12-llama-cpp",
+							},
+							URI: "quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-llama-cpp",
+						}
+						amdState := &system.SystemState{GPUVendor: system.AMD, VRAM: 8 * 1024 * 1024 * 1024}
+						Expect(cudaBackend.IsCompatibleWith(amdState)).To(BeFalse())
+					})
+
+					It("CPU backends should be compatible with ZLUDA capability", func() {
+						cpuBackend := &GalleryBackend{
+							Metadata: Metadata{
+								Name: "cpu-llama-cpp",
+							},
+							URI: "quay.io/go-skynet/local-ai-backends:latest-cpu-llama-cpp",
+						}
+						zludaState := &system.SystemState{GPUVendor: system.AMD, VRAM: 8 * 1024 * 1024 * 1024}
+						os.Setenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY", "zluda")
+						defer os.Unsetenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY")
+						Expect(cpuBackend.IsCompatibleWith(zludaState)).To(BeTrue())
+					})
+
+					It("ROCm backends should NOT be compatible with ZLUDA capability", func() {
+						rocmBackend := &GalleryBackend{
+							Metadata: Metadata{
+								Name: "rocm-llama-cpp",
+							},
+							URI: "quay.io/go-skynet/local-ai-backends:latest-gpu-rocm-hipblas-llama-cpp",
+						}
+						zludaState := &system.SystemState{GPUVendor: system.AMD, VRAM: 8 * 1024 * 1024 * 1024}
+						os.Setenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY", "zluda")
+						defer os.Unsetenv("LOCALAI_FORCE_META_BACKEND_CAPABILITY")
+						Expect(rocmBackend.IsCompatibleWith(zludaState)).To(BeFalse())
+					})
+				})
+			})
+
 			Context("Vulkan backends", func() {
 				It("should be compatible on CPU-only systems", func() {
 					// Vulkan backends don't have a specific GPU vendor requirement in the current logic

@@ -220,6 +220,11 @@ function getBuildProfile() {
         return 0
     fi
 
+    if [ x"${BUILD_TYPE:-}" == "xzluda" ]; then
+        echo "zluda"
+        return 0
+    fi
+
     if [ -d "/opt/intel" ]; then
         echo "intel"
         return 0
@@ -471,6 +476,13 @@ function startBackend() {
     if [ -d "${EDIR}/lib" ]; then
         export LD_LIBRARY_PATH="${EDIR}/lib:${LD_LIBRARY_PATH:-}"
         echo "Added ${EDIR}/lib to LD_LIBRARY_PATH for GPU libraries"
+    fi
+
+    # ZLUDA (experimental): prepend ZLUDA libraries so CUDA calls are intercepted
+    local zluda_path="${ZLUDA_PATH:-/opt/zluda}"
+    if [ x"${BUILD_TYPE:-}" == "xzluda" ] && [ -d "${zluda_path}" ]; then
+        export LD_LIBRARY_PATH="${zluda_path}:${LD_LIBRARY_PATH:-}"
+        echo "[ZLUDA experimental] Added ${zluda_path} to LD_LIBRARY_PATH for CUDA-via-ZLUDA"
     fi
 
     if [ ! -z "${BACKEND_FILE:-}" ]; then

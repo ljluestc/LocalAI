@@ -20,6 +20,7 @@ const (
 	VendorAMD     = "amd"
 	VendorIntel   = "intel"
 	VendorVulkan  = "vulkan"
+	VendorZLUDA   = "zluda"
 	VendorUnknown = "unknown"
 )
 
