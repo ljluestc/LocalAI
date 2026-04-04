@@ -16,6 +16,7 @@ const (
 	Nvidia = "nvidia"
 	AMD    = "amd"
 	Intel  = "intel"
+	Zluda  = "zluda"
 
 	// Private constants - only used within this package
 	defaultCapability = "default"
@@ -32,6 +33,8 @@ const (
 	capabilityEnv        = "LOCALAI_FORCE_META_BACKEND_CAPABILITY"
 	capabilityRunFileEnv = "LOCALAI_FORCE_META_BACKEND_CAPABILITY_RUN_FILE"
 	defaultRunFile       = "/run/localai/capability"
+	zludaPathEnv         = "ZLUDA_PATH"
+	defaultZludaPath     = "/opt/zluda"
 
 	// Backend detection tokens (private)
 	backendTokenDarwin = "darwin"
@@ -42,11 +45,13 @@ const (
 	backendTokenROCM   = "rocm"
 	backendTokenHIP    = "hip"
 	backendTokenSYCL   = "sycl"
+	backendTokenZLUDA  = "zluda"
 )
 
 var (
-	cuda13DirExists bool
-	cuda12DirExists bool
+	cuda13DirExists  bool
+	cuda12DirExists  bool
+	zludaLibDetected bool
 )
 
 func init() {
@@ -54,6 +59,26 @@ func init() {
 	cuda13DirExists = err == nil
 	_, err = os.Stat(filepath.Join(string(os.PathSeparator), "usr", "local", "cuda-12"))
 	cuda12DirExists = err == nil
+
+	// Detect ZLUDA libraries at startup
+	zludaLibDetected = detectZLUDA()
+}
+
+// detectZLUDA checks if ZLUDA libraries are present on the system.
+// It checks $ZLUDA_PATH first, then falls back to /opt/zluda.
+func detectZLUDA() bool {
+	zludaPath := os.Getenv(zludaPathEnv)
+	if zludaPath == "" {
+		zludaPath = defaultZludaPath
+	}
+	// ZLUDA provides a libcuda.so shim that intercepts CUDA calls
+	_, err := os.Stat(filepath.Join(zludaPath, "libcuda.so"))
+	return err == nil
+}
+
+// isZLUDAAvailable returns whether ZLUDA libraries were detected at startup.
+func isZLUDAAvailable() bool {
+	return zludaLibDetected
 }
 
 func (s *SystemState) Capability(capMap map[string]string) string {
@@ -146,6 +171,13 @@ func (s *SystemState) getSystemCapabilities() string {
 		return s.systemCapabilities
 	}
 
+	// ZLUDA: AMD GPU with ZLUDA libraries present → experimental CUDA-via-ZLUDA
+	if s.GPUVendor == AMD && isZLUDAAvailable() {
+		xlog.Info("Using ZLUDA capability (experimental: AMD GPU with ZLUDA CUDA compatibility layer)", "env", capabilityEnv)
+		s.systemCapabilities = Zluda
+		return s.systemCapabilities
+	}
+
 	// CUDA directories refine capability only for NVIDIA GPUs
 	if s.GPUVendor == Nvidia {
 		if cuda13DirExists {
@@ -169,6 +201,9 @@ func (s *SystemState) getSystemCapabilities() string {
 func (s *SystemState) BackendPreferenceTokens() []string {
 	capStr := strings.ToLower(s.getSystemCapabilities())
 	switch {
+	case strings.HasPrefix(capStr, Zluda):
+		// ZLUDA translates CUDA → HIP, so prefer CUDA backends first
+		return []string{backendTokenCUDA, backendTokenZLUDA, vulkan, "cpu"}
 	case strings.HasPrefix(capStr, Nvidia):
 		return []string{backendTokenCUDA, vulkan, "cpu"}
 	case strings.HasPrefix(capStr, AMD):
@@ -220,8 +255,15 @@ func (s *SystemState) IsBackendCompatible(name, uri string) bool {
 	isNvidiaBackend := strings.Contains(combined, backendTokenCUDA) ||
 		strings.Contains(combined, Nvidia)
 	if isNvidiaBackend {
-		// NVIDIA backends are compatible with nvidia, nvidia-cuda-12, nvidia-cuda-13, and l4t capabilities
-		return strings.HasPrefix(capability, Nvidia)
+		// NVIDIA backends are compatible with nvidia, nvidia-cuda-12, nvidia-cuda-13, l4t,
+		// and ZLUDA capabilities (ZLUDA translates CUDA calls for AMD GPUs)
+		return strings.HasPrefix(capability, Nvidia) || capability == Zluda
+	}
+
+	// Check for ZLUDA-specific backends
+	isZludaBackend := strings.Contains(combined, backendTokenZLUDA)
+	if isZludaBackend {
+		return capability == Zluda
 	}
 
 	// Check for AMD/ROCm-specific backends

@@ -309,6 +309,66 @@ docker run --rm -ti --device /dev/dri -p 8080:8080 -e DEBUG=true -e MODELS_PATH=
 
 Note also that sycl does have a known issue to hang with `mmap: true`. You have to disable it in the model configuration if explicitly enabled.
 
+## ZLUDA (Experimental) — AMD GPUs running CUDA workloads
+
+{{% notice warning %}}
+ZLUDA support is **experimental**. Performance and stability may vary depending on the AMD GPU model and the specific CUDA backend being used. Please report issues on GitHub.
+{{% /notice %}}
+
+[ZLUDA](https://github.com/vosen/ZLUDA) is a CUDA compatibility layer that allows applications compiled for NVIDIA CUDA to run on AMD GPUs by translating CUDA API calls to HIP/ROCm at runtime. This means existing CUDA-enabled backends (PyTorch, llama.cpp, diffusers) can run on AMD hardware without modification.
+
+### Requirements
+
+- AMD GPU with ROCm 6.x support
+- ROCm drivers installed on the host (`amdgpu-dkms` + `rocm`)
+- ZLUDA libraries installed (typically at `/opt/zluda`)
+- Devices `/dev/dri` and `/dev/kfd` accessible
+
+### Setup
+
+1. Install ZLUDA following the [official instructions](https://github.com/vosen/ZLUDA).
+2. Set the `ZLUDA_PATH` environment variable if ZLUDA is not installed at the default `/opt/zluda` path.
+3. Use the `zluda` capability to force ZLUDA mode:
+
+```bash
+export LOCALAI_FORCE_META_BACKEND_CAPABILITY=zluda
+```
+
+When ZLUDA libraries are detected and an AMD GPU is present, LocalAI will automatically select ZLUDA as the runtime. You can also force it explicitly with the environment variable above.
+
+### Container example
+
+```bash
+docker run --rm -ti \
+  -e DEBUG=true \
+  -e LOCALAI_FORCE_META_BACKEND_CAPABILITY=zluda \
+  -v /opt/zluda:/opt/zluda:ro \
+  --device /dev/dri \
+  --device /dev/kfd \
+  -p 8080:8080 \
+  -v $PWD/models:/models \
+  quay.io/go-skynet/local-ai:master-gpu-hipblas
+```
+
+### Environment variables
+
+- `LOCALAI_FORCE_META_BACKEND_CAPABILITY=zluda` — Force ZLUDA runtime selection
+- `ZLUDA_PATH=/path/to/zluda` — Custom ZLUDA library path (default: `/opt/zluda`)
+- `BUILD_TYPE=zluda` — Build backends with ZLUDA support
+
+### How it works
+
+ZLUDA intercepts CUDA library calls (`libcuda.so`, `libcudart.so`) by providing shim libraries that translate CUDA API calls to HIP. When ZLUDA is active, CUDA-compiled backends run on AMD GPUs transparently — no backend code changes are required.
+
+LocalAI detects ZLUDA by checking for the presence of `libcuda.so` in the ZLUDA library path. When detected with an AMD GPU, it routes to CUDA backends rather than ROCm backends.
+
+### Known limitations
+
+- Not all CUDA operations are supported by ZLUDA; complex kernels may fail
+- Performance may be lower than native ROCm/HIPBlas backends for some workloads
+- ZLUDA is a third-party project — stability depends on the upstream release
+- Requires matching ROCm version between host drivers and ZLUDA build
+
 ## Vulkan acceleration
 
 ### Requirements

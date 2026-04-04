@@ -265,6 +265,36 @@ package_intel_libs() {
     echo "Intel oneAPI libraries packaged successfully"
 }
 
+# Package ZLUDA (experimental) CUDA compatibility libraries for AMD GPUs
+package_zluda_libs() {
+    echo "Packaging ZLUDA libraries for BUILD_TYPE=${BUILD_TYPE}..."
+
+    local zluda_path="${ZLUDA_PATH:-/opt/zluda}"
+
+    if [ ! -d "$zluda_path" ]; then
+        echo "Warning: ZLUDA path not found at $zluda_path, skipping ZLUDA library packaging" >&2
+        return
+    fi
+
+    # ZLUDA shim libraries that intercept CUDA calls and translate to HIP
+    local zluda_libs=(
+        "libcuda.so*"
+        "libcudart.so*"
+        "libnvcuda.so*"
+        "libnvml.so*"
+    )
+
+    for lib_pattern in "${zluda_libs[@]}"; do
+        copy_libs_glob "${zluda_path}/${lib_pattern}"
+    done
+
+    echo "ZLUDA libraries packaged successfully"
+
+    # ZLUDA also requires underlying ROCm/HIP libraries
+    echo "Packaging underlying ROCm libraries for ZLUDA..."
+    package_rocm_libs
+}
+
 # Package Vulkan libraries
 package_vulkan_libs() {
     echo "Packaging Vulkan libraries for BUILD_TYPE=${BUILD_TYPE}..."
@@ -314,6 +344,9 @@ package_gpu_libs() {
         hipblas)
             package_rocm_libs
             ;;
+        zluda)
+            package_zluda_libs
+            ;;
         sycl_f16|sycl_f32|intel)
             package_intel_libs
             ;;
@@ -339,6 +372,7 @@ export -f copy_libs_glob
 export -f package_cuda_libs
 export -f package_rocm_libs
 export -f package_intel_libs
+export -f package_zluda_libs
 export -f package_vulkan_libs
 
 # If script is run directly (not sourced), execute the packaging
