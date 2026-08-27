@@ -16,6 +16,7 @@ var _ = Describe("getSystemCapabilities", func() {
 		origEnv    string
 		origCuda12 bool
 		origCuda13 bool
+		origZluda  bool
 	)
 
 	BeforeEach(func() {
@@ -28,11 +29,13 @@ var _ = Describe("getSystemCapabilities", func() {
 
 		origCuda12 = cuda12DirExists
 		origCuda13 = cuda13DirExists
+		origZluda = zludaLibDetected
 	})
 
 	AfterEach(func() {
 		cuda12DirExists = origCuda12
 		cuda13DirExists = origCuda13
+		zludaLibDetected = origZluda
 
 		if origEnv != "" {
 			os.Setenv(capabilityEnv, origEnv)
@@ -44,6 +47,7 @@ var _ = Describe("getSystemCapabilities", func() {
 		vram           uint64
 		cuda12         bool
 		cuda13         bool
+		zluda          bool
 		wantCapability string
 		wantTokens     []string
 	}
@@ -52,6 +56,7 @@ var _ = Describe("getSystemCapabilities", func() {
 		func(tc testCase) {
 			cuda12DirExists = tc.cuda12
 			cuda13DirExists = tc.cuda13
+			zludaLibDetected = tc.zluda
 
 			s := &SystemState{
 				GPUVendor: tc.gpuVendor,
@@ -124,6 +129,42 @@ var _ = Describe("getSystemCapabilities", func() {
 			cuda13:         false,
 			wantCapability: "default",
 			wantTokens:     []string{"cpu"},
+		}),
+		Entry("AMD GPU with ZLUDA detected", testCase{
+			gpuVendor:      AMD,
+			vram:           eightGB,
+			cuda12:         false,
+			cuda13:         false,
+			zluda:          true,
+			wantCapability: "zluda",
+			wantTokens:     []string{"cuda", "zluda", "vulkan", "cpu"},
+		}),
+		Entry("AMD GPU without ZLUDA falls back to amd", testCase{
+			gpuVendor:      AMD,
+			vram:           eightGB,
+			cuda12:         false,
+			cuda13:         false,
+			zluda:          false,
+			wantCapability: "amd",
+			wantTokens:     []string{"rocm", "hip", "vulkan", "cpu"},
+		}),
+		Entry("AMD GPU with ZLUDA but low VRAM defaults to CPU", testCase{
+			gpuVendor:      AMD,
+			vram:           twoGB,
+			cuda12:         false,
+			cuda13:         false,
+			zluda:          true,
+			wantCapability: "default",
+			wantTokens:     []string{"cpu"},
+		}),
+		Entry("NVIDIA GPU with ZLUDA present still uses NVIDIA", testCase{
+			gpuVendor:      Nvidia,
+			vram:           eightGB,
+			cuda12:         true,
+			cuda13:         false,
+			zluda:          true,
+			wantCapability: "nvidia-cuda-12",
+			wantTokens:     []string{"cuda", "vulkan", "cpu"},
 		}),
 	)
 })
